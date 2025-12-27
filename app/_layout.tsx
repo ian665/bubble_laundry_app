@@ -12,7 +12,8 @@ export default function RootLayout() {
         options={{ 
           presentation: 'modal', 
           headerTitle: '預約取件', 
-          headerShown: false,
+          headerShown: false, // 顯示導航欄，包含返回按鈕
+          headerBackTitle: '返回',
         }} 
       />
       <Stack.Screen 

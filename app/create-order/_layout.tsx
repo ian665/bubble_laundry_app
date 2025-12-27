@@ -12,12 +12,26 @@ export default function CreateOrderLayout() {
     >
       <Stack.Screen 
         name="index" 
-        options={{ title: '1. 選擇衣物' }} 
+        options={{ 
+          title: '1. 選擇衣物',
+          // 顯示返回按鈕回到首頁
+        }} 
       />
       <Stack.Screen 
         name="schedule" 
-        options={{ title: '2. 預約時間' }} 
+        options={{ title: '2. 預約時間', headerShown: true }} 
       />
-    </Stack>
+      <Stack.Screen 
+        name="confirm" 
+        options={{ title: '3. 確認訂單' }} 
+      />
+      <Stack.Screen 
+        name="success" 
+        options={{ 
+          title: '預約成功',
+          headerBackVisible: false, // 成功頁面不顯示返回按鈕
+        }} 
+      />
+    </Stack>  
   );
 }
