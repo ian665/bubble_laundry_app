@@ -1,8 +1,7 @@
 import { View, Text, StyleSheet, Pressable, TextInput, ScrollView, Alert, Platform, Modal } from 'react-native';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'expo-router';
 import { Picker } from '@react-native-picker/picker';
-import { parse } from 'expo-linking';
 
 export default function ScheduleScreen() {
   const router = useRouter();
@@ -17,6 +16,64 @@ export default function ScheduleScreen() {
   const [selectedDate, setSelectedDate] = useState(''); // 今天/明天
   const [selectedHour, setSelectedHour] = useState(''); // 小時
   const [selectedMinute, setSelectedMinute] = useState(''); // 分鐘
+
+  // 自動設置預設可用時間
+  useEffect(() => {
+    const setDefaultAvailableTime = () => {
+      const now = new Date();
+      const bufferTime = new Date(now.getTime() + 30 * 60 * 1000); // 30分鐘緩衝
+      
+      let defaultDate = '0'; // 預設今天
+      let defaultHour = '0';
+      let defaultMinute = '0';
+
+      // 檢查今天是否還有可用時間
+      const currentHour = bufferTime.getHours();
+      const currentMinute = bufferTime.getMinutes();
+
+      if (currentHour > 7) {
+        // 如果已經超過服務時間，選明天
+        defaultDate = '1';
+        defaultHour = '0';
+        defaultMinute = '0';
+      } else {
+        // 今天還有時間，找到下一個可用時段
+        defaultHour = currentHour.toString();
+        
+        // 找到下一個5分鐘倍數
+        const nextAvailableMinute = Math.ceil(currentMinute / 5) * 5;
+        if (nextAvailableMinute >= 60) {
+          defaultHour = (currentHour + 1).toString();
+          defaultMinute = '0';
+          
+          // 如果小時超出範圍，選明天
+          if (currentHour + 1 > 7) {
+            defaultDate = '1';
+            defaultHour = '0';
+            defaultMinute = '0';
+          }
+        } else {
+          defaultMinute = nextAvailableMinute.toString();
+        }
+      }
+
+      setSelectedDate(defaultDate);
+      setSelectedHour(defaultHour);
+      setSelectedMinute(defaultMinute);
+    };
+
+    // 只在初始載入時設置預設值
+    if (!selectedDate && !selectedHour && !selectedMinute) {
+      setDefaultAvailableTime();
+    }
+  }, [selectedDate, selectedHour, selectedMinute]);
+
+  // 當預設時間設定完成後，計算送洗和取件時間
+  useEffect(() => {
+    if (selectedDate && selectedHour && selectedMinute) {
+      handleTimeComponentChange();
+    }
+  }, [selectedDate, selectedHour, selectedMinute]);
 
   // 生成日期選項
   const getDateOptions = () => {
@@ -60,18 +117,131 @@ export default function ScheduleScreen() {
     return minutes;
   };
 
-  // 檢查時間是否為過去時間
-  const isTimeInPast = (dateValue: string, hourValue: string, minuteValue: string) => {
-    if (!dateValue || !hourValue || !minuteValue) return false;
+  // 檢查時間是否為過去時間或不可用
+  const isTimeUnavailable = (dateValue: string, hourValue: string, minuteValue: string) => {
+    if (!dateValue || hourValue === undefined || minuteValue === undefined) return false;
     
     const now = new Date();
     const selectedTime = new Date();
-    if(parseInt(dateValue) === 1 ) return false;
+    
+    // 如果是明天，都可以選
+    if (parseInt(dateValue) === 1) return false;
+    
+    // 如果是今天，檢查是否為過去時間
     if (parseInt(dateValue) === 0) {
       selectedTime.setHours(parseInt(hourValue), parseInt(minuteValue), 0, 0);
-      return selectedTime <= now;
+      // 加上30分鐘的緩衝時間（準備時間）
+      const bufferTime = new Date(now.getTime() + 30 * 60 * 1000);
+      return selectedTime <= bufferTime;
     }
+    
     return false;
+  };
+
+  // 檢查小時是否可用
+  const isHourAvailable = (hourValue: string) => {
+    if (!selectedDate) return true;
+    
+    const now = new Date();
+    if (parseInt(selectedDate) === 1) return true; // 明天都可以
+    
+    // 今天的話，檢查是否還有可用的分鐘
+    const currentHour = now.getHours();
+    const selectedHour = parseInt(hourValue);
+    
+    if (selectedHour < currentHour) return false;
+    if (selectedHour > currentHour) return true;
+    
+    // 同一小時，檢查是否還有可用分鐘
+    const currentMinute = now.getMinutes();
+    return currentMinute <= 55; // 至少要有5分鐘的選項
+  };
+
+  // 檢查分鐘是否可用
+  const isMinuteAvailable = (minuteValue: string) => {
+    if (!selectedDate || !selectedHour) return true;
+    
+    const now = new Date();
+    if (parseInt(selectedDate) === 1) return true; // 明天都可以
+    
+    const currentHour = now.getHours();
+    const selectedHourInt = parseInt(selectedHour);
+    
+    if (selectedHourInt > currentHour) return true; // 未來小時都可以
+    if (selectedHourInt < currentHour) return false; // 過去小時都不行
+    
+    // 同一小時，檢查分鐘 + 30分鐘緩衝
+    const currentMinute = now.getMinutes();
+    const bufferMinute = currentMinute + 30;
+    return parseInt(minuteValue) >= bufferMinute;
+  };
+
+  // 生成可用的日期選項
+  const getAvailableDateOptions = () => {
+    const today = new Date();
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    
+    const options = [
+      { 
+        label: `今天 ${today.getDate()}`, 
+        value: '0' 
+      },
+      { 
+        label: `明天 ${tomorrow.getDate()}`, 
+        value: '1' 
+      }
+    ];
+
+    // 檢查今天是否還有可用時間
+    const now = new Date();
+    let hasTodayAvailable = false;
+    
+    for (let hour = 0; hour <= 7; hour++) {
+      if (hour > now.getHours()) {
+        hasTodayAvailable = true;
+        break;
+      }
+      if (hour === now.getHours() && now.getMinutes() <= 25) { // 至少30分鐘緩衝
+        hasTodayAvailable = true;
+        break;
+      }
+    }
+
+    // 如果今天沒有可用時間，自動選明天
+    if (!hasTodayAvailable && !selectedDate) {
+      setSelectedDate('1');
+    }
+
+    return options;
+  };
+
+  // 生成可用的小時選項
+  const getAvailableHourOptions = () => {
+    const hours = [];
+    for (let i = 0; i <= 7; i++) {
+      const isAvailable = isHourAvailable(i.toString());
+      hours.push({
+        label: i.toString().padStart(2, '0'),
+        value: i.toString(),
+        available: isAvailable
+      });
+    }
+    return hours;
+  };
+
+  // 生成可用的分鐘選項
+  const getAvailableMinuteOptions = () => {
+    const minutes = [];
+    for (let i = 0; i < 60; i += 5) {
+      const isAvailable = isMinuteAvailable(i.toString());
+      minutes.push({
+        label: i.toString().padStart(2, '0'),
+        value: i.toString(),
+        available: isAvailable
+      });
+    }
+    return minutes;
   };
 
   // 生成送洗時間選項 (今天和明天的00:00-08:00，精確到分鐘)
@@ -139,9 +309,9 @@ export default function ScheduleScreen() {
       selectedTime.setDate(now.getDate() + parseInt(selectedDate));
       selectedTime.setHours(parseInt(selectedHour), parseInt(selectedMinute), 0, 0);
       
-      // 檢查是否為過去時間
-      if (selectedTime <= now) {
-        return; // 不更新過去時間
+      // 檢查是否為不可用時間
+      if (isTimeUnavailable(selectedDate, selectedHour, selectedMinute)) {
+        return; // 不更新不可用時間
       }
       
       const timeValue = selectedTime.toISOString();
@@ -245,11 +415,14 @@ export default function ScheduleScreen() {
                   selectedValue={selectedDate}
                   onValueChange={(itemValue) => {
                     setSelectedDate(itemValue);
+                    // 重置小時和分鐘選擇，因為可用選項可能改變
+                    setSelectedHour('');
+                    setSelectedMinute('');
                     setTimeout(handleTimeComponentChange, 100);
                   }}
                   style={styles.picker}
                 >
-                  {getDateOptions().map((option, index) => (
+                  {getAvailableDateOptions().map((option, index) => (
                     <Picker.Item 
                       key={index}
                       label={option.label}
@@ -266,15 +439,19 @@ export default function ScheduleScreen() {
                   selectedValue={selectedHour}
                   onValueChange={(itemValue) => {
                     setSelectedHour(itemValue);
+                    // 重置分鐘選擇，因為可用選項可能改變
+                    setSelectedMinute('');
                     setTimeout(handleTimeComponentChange, 100);
                   }}
                   style={styles.picker}
                 >
-                  {getHourOptions().map((option, index) => (
+                  {getAvailableHourOptions().map((option, index) => (
                     <Picker.Item 
                       key={index}
                       label={option.label}
                       value={option.value}
+                      enabled={option.available}
+                      color={option.available ? '#000000' : '#888888'} // 不可用時間顯示為灰色
                     />
                   ))}
                 </Picker>
@@ -291,12 +468,13 @@ export default function ScheduleScreen() {
                   }}
                   style={styles.picker}
                 >
-                  {getMinuteOptions().map((option, index) => (
+                  {getAvailableMinuteOptions().map((option, index) => (
                     <Picker.Item 
                       key={index}
                       label={option.label}
                       value={option.value}
-                      enabled={!isTimeInPast(selectedDate, selectedHour, option.value)}
+                      enabled={option.available}
+                      color={option.available ? '#000000' : '#888888'} // 不可用時間顯示為灰色
                     />
                   ))}
                 </Picker>
@@ -308,18 +486,24 @@ export default function ScheduleScreen() {
               <Pressable 
                 style={[
                   styles.modalConfirmButton,
-                  (!selectedDate || !selectedHour || !selectedMinute) && styles.modalConfirmButtonDisabled
+                  (!selectedDate || !selectedHour || !selectedMinute || 
+                   isTimeUnavailable(selectedDate, selectedHour, selectedMinute)) && styles.modalConfirmButtonDisabled
                 ]}
                 onPress={() => {
-                  if (selectedDate && selectedHour && selectedMinute) {
+                  if (selectedDate && selectedHour && selectedMinute && 
+                      !isTimeUnavailable(selectedDate, selectedHour, selectedMinute)) {
                     setShowTimePicker(false);
+                  } else {
+                    Alert.alert('時間不可用', '請選擇其他可用時間');
                   }
                 }}
-                disabled={!selectedDate || !selectedHour || !selectedMinute}
+                disabled={!selectedDate || !selectedHour || !selectedMinute ||
+                         isTimeUnavailable(selectedDate, selectedHour, selectedMinute)}
               >
                 <Text style={[
                   styles.modalConfirmButtonText,
-                  (!selectedDate || !selectedHour || !selectedMinute) && styles.modalConfirmButtonTextDisabled
+                  (!selectedDate || !selectedHour || !selectedMinute ||
+                   isTimeUnavailable(selectedDate, selectedHour, selectedMinute)) && styles.modalConfirmButtonTextDisabled
                 ]}>
                   確認選擇
                 </Text>
