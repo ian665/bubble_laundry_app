@@ -184,11 +184,11 @@ export default function ScheduleScreen() {
     
     const options = [
       { 
-        label: `今天 ${today.getDate()}`, 
+        label: `${today.getDate()}`, 
         value: '0' 
       },
       { 
-        label: `明天 ${tomorrow.getDate()}`, 
+        label: `${tomorrow.getDate()}`, 
         value: '1' 
       }
     ];
@@ -371,11 +371,10 @@ export default function ScheduleScreen() {
 
   return (
     <ScrollView style={styles.container}>
-      <Text style={styles.title}>預約送洗時間與地址</Text>
 
       {/* 送洗時間選擇 */}
       <View style={styles.section}>
-        <Text style={styles.label}>送洗時間 *(今天/明天 00:00~08:00)</Text>
+        <Text style={styles.label}>送洗時間 (今天/明天 00:00~08:00)</Text>
         <Pressable 
           style={styles.timePickerButton}
           onPress={() => setShowTimePicker(true)}
